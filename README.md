@@ -1,71 +1,79 @@
-Инструкция тестировалась на Conan, установленном через `pip install conan==1.52.0`. Версия 1.51 не работала.
+Dog Story — Backend Game Server
+Бэкенд-сервер для многопользовательской игры «Dog Story». Сервер обрабатывает подключения игроков, управляет движением собак по карте, генерирует потерянные предметы, обрабатывает сбор лута и ведёт таблицу рекордов.
 
-Подробности см. в уроке [Ещё раз о conan — линкуем с умом](https://www.notion.so/praktikum/bc565fa7a70040c48dc10850049b0a62?v=24f7e4d44c034398bc7a2c0899dbfd07&p=13c770a14d9246f58379cc4228d1a1ce&pm=s).
+🛠 Технологический стек
+Язык: C++20
+Сборка: CMake, Conan
+Сеть: Boost.Asio, Boost.Beast
+Сериализация: Boost.Serialization
+База данных: PostgreSQL, libpqxx
+Логирование: Boost.Log
+Контейнеризация: Docker
 
-## Сборка под Linux
+✨ Ключевые возможности
+REST API: Обработка HTTP-запросов (join, state, action, tick, records).
+Многопоточность: Асинхронная обработка сетевых запросов через io_context и strand'ы.
+Игровая логика: Движение собак по дорогам, обработка коллизий со стенами и сбор лута (офисы и потерянные предметы).
+Сохранение состояния: Автоматическая сериализация состояния игры в файл (с синхронизацией по игровым часам) и восстановление при старте.
+Уход на пенсию: Отслеживание бездействия игрока (по нулевой скорости) с последующей аннулированием токена и записью в БД.
+Таблица рекордов: Хранение результатов игроков в PostgreSQL, пагинация и фильтрация.
+Логирование: Вывод структурированных логов в формате JSON.
 
-При сборке под Linux обязательно указываются флаги:
-* `-s compiler.libcxx=libstdc++11`
-* `-s build_type=???`
+🚀 Запуск проекта
+1. Требования
+Docker (рекомендуется)
 
-Вот пример конфигурирования для Release и Debug:
-```
-# mkdir -p build-release 
-# cd build-release
-# conan install .. --build=missing -s build_type=Release -s compiler.libcxx=libstdc++11
-# cmake .. -DCMAKE_BUILD_TYPE=Release
-# cd ..
+Или локально: CMake, Conan, PostgreSQL
 
-# mkdir -p build-debug
-# cd build-debug
-# conan install .. --build=missing -s build_type=Debug -s compiler.libcxx=libstdc++11
-# cmake .. -DCMAKE_BUILD_TYPE=Debug
-# cd ..
+2. Запуск через Docker (рекомендуется)
+bash
+# Сборка образа
+docker build -t game-server .
 
-```
+# Запуск сервера
+docker run -p 8080:8080 \
+  -e GAME_DB_URL="postgres://user:password@host:5432/dbname" \
+  game-server \
+  /app/game_server --config-file /app/data/config.json --www-root /app/static
+3. Локальный запуск
+bash
+# Установка зависимостей
+conan install . --build=missing
 
-## Сборка под Windows
+# Сборка
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . -j$(nproc)
 
-Нужно выполнить два шага:
-1. В conanfile.txt нужно изменить `cmake` на `cmake_multi`. После этого можно конфигурировать таким способом:
-2. В CMakeLists.txt заменить `include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)` на `include(${CMAKE_BINARY_DIR}/conanbuildinfo_multi.cmake)`.
+# Запуск
+./bin/game_server --config-file ../data/config.json --www-root ../static
 
-После этого можно запустить подобный снипет:
+4. Аргументы командной строки
+Аргумент	Описание
+-c, --config-file	Путь к файлу конфигурации (config.json)
+-w, --www-root	Путь к папке со статикой
+-t, --tick-period	Период автоматического обновления игровых часов (в мс)
+--state-file	Путь к файлу для сохранения состояния
+--save-state-period	Период автосохранения (в игровых мс)
+🗄 База данных
+Для работы таблицы рекордов требуется PostgreSQL. Переменная окружения GAME_DB_URL задаёт строку подключения.
 
-```
-# mkdir build 
-# cd build
-# conan install .. --build=missing -s build_type=Debug
-# conan install .. --build=missing -s build_type=Release
-# conan install .. --build=missing -s build_type=RelWithDebInfo
-# conan install .. --build=missing -s build_type=MinSizeRel
-# cmake ..
-```
+Пример строки подключения:
+text
+postgres://postgres:password@localhost:5432/game_db
+При первом запуске сервер автоматически создаёт таблицу retired_players и необходимые индексы.
 
-В таком случае будут собираться все конфигурации (что не быстро). Можно сэкономить время, оставив только нужные.
+🔌 Основные эндпоинты
+Метод	Эндпоинт	Описание
+POST	/api/v1/game/join	Подключение игрока к карте
+GET	/api/v1/game/state	Получение состояния игры
+POST	/api/v1/game/player/action	Управление собакой (движение)
+POST	/api/v1/game/tick	Ручное продвижение игрового времени
+GET	/api/v1/game/records	Получение таблицы рекордов
+GET	/api/v1/maps	Список доступных карт
 
-Запускать сборку нужно только через родной cmd. В других консолях иногда возникают проблемы.
-
-## Запуск докера
-
-Можно собирать и запускать сервер одной командой (вернее, двумя) в докере. Делается это так:
-
-```
-docker build -t my_http_server .
-docker run --rm -p 80:8080 my_http_server
-```
-
-Это каноничный способ запуска, которым будут пользоваться студенты. Если он не работает, значит, мы что-то не так делаем.
-
-Из докерфайла можно узнать все детали сборки запуска, если что-то идёт не так локально.
-
-## Запуск
-
-В папке `build` выполнить команду
-```sh
-bin/game_server ../data/config.json ../static/
-```
-После этого можно открыть в браузере:
-* http://127.0.0.1:8080/api/v1/maps для получения списка карт и
-* http://127.0.0.1:8080/api/v1/map/map1 для получения подробной информации о карте `map1`
-* http://127.0.0.1:8080/ для чтения статического контента (в каталоге static)
+🧠 Архитектурные решения
+Инверсия зависимостей: Модель и приложение не знают о БД и HTTP. Взаимодействие идёт через интерфейсы (Observer).
+Пул соединений: Для потокобезопасной работы с PostgreSQL реализован собственный пул соединений (ConnectionPool).
+Атомарное сохранение: Состояние сохраняется во временный файл с последующим переименованием, чтобы избежать порчи данных при сбое.
+Асинхронность: Использование Boost.Asio позволя
